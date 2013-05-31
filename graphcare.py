@@ -17,6 +17,7 @@ import subprocess
 import time
 import datetime
 import shlex
+import MySQLdb
 from gp import *
 
 def MakeLogTimestamp(unixtime= None):
@@ -43,6 +44,9 @@ class GraphservConfig:
         self.graphservHttpPort= '8090'
         self.graphservUser= ''
         self.graphservPassword= ''
+        self.graphservWorkDir= '/mnt/user-store/jkroll/graphserv-instance/'
+        self.graphservExecutable= '../graphserv/graphserv.dbg'
+        self.graphcoreExecutable= '../graphserv/graphcore/graphcore'
         self.sshUser= ''
         self.loadJson(file)
     
@@ -86,8 +90,8 @@ def CheckGraphserv(servconfig):
                     args= []
                 else:
                     args= ['ssh', '-f', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
-                args= args + shlex.split('nohup screen -dm -S mytestsession bash -c "cd /mnt/user-store/jkroll/graphserv-instance/ && \
-../graphserv/graphserv.dbg -t %(graphservPort)s -H %(graphservHttpPort)s -l eia -c ../graphserv/graphcore/graphcore \
+                args= args + shlex.split('nohup screen -dm -S mytestsession bash -c "cd %(graphservWorkDir) && \
+%(graphservExecutable) -t %(graphservPort)s -H %(graphservHttpPort)s -l eia -c %(graphcoreExecutable) \
 | tee graphserv-$(date +%%F_%%T).log"' % servconfig.__dict__)
                 log(args)
                 p= subprocess.Popen(args,
@@ -106,11 +110,58 @@ def CheckGraphserv(servconfig):
         time.sleep(5)
     raise Exception("tried restarting graphserv for 3 times, giving up.") 
 
+
+def GetSQLServerForDB(wiki):    # wiki is dbname without '_p' suffix
+    return '%s.labsdb' % wiki   # only on labs!
+    
+
+def ReloadGraph(conn, instance, namespaces= '*'):
+    try:
+        conn.use_graph(instance)
+    except Exception as ex:
+        log(str(ex))
+        conn.create_graph(instance)
+    query= """SELECT /* SLOW_OK */ B.page_id, cl_from FROM categorylinks 
+JOIN page AS B 
+ON B.page_title = cl_to 
+AND B.page_namespace = 14 
+AND B.page_id!=0 
+AND cl_from!=0"""
+    if namespaces!='*':
+        query+= ('\nAND (')
+        namespaces= list(namespaces)
+        for i in range(len(namespaces)): namespaces[i]= 'page_namespace=%s' % namespaces[i]
+        query+= (' OR '.join(namespaces))
+        query+= ')'
+    log('%s: %s' % (instance, query))
+
+    #~ conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(instance))
+    #~ cur= conn.cursor()
+    #~ cur.execute('USE %s_p' % instance)
+    #~ cur.execute(query)
+    #~ with open('/tmp/foo', 'w') as outfile:
+        #~ while True:
+            #~ row= cur.fetchone()
+            #~ if not row: break
+            #~ outfile.write('%d, %d\n' % (row[0], row[1]))
+    
+    import _mysql
+    db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(instance), db=instance+'_p')
+    db.query(query)
+    result= db.use_result()
+    with open('/tmp/foo', 'w') as outfile:
+        while True:
+            row= result.fetch_row()
+            if not row: break
+            outfile.write('%d, %d\n' % (int(row[0][0]), int(row[0][1])))
+
+    
+
 def CheckGraphcores(servconfig, instanceconfig):
     conn= client.Connection(client.ClientTransport(servconfig.remoteHost, int(servconfig.graphservPort)))
     conn.connect()
     
-    #~ conn.authorize('password', '%s:%s' % (str(servconfig.graphservUser), str(servconfig.graphservPassword)))
+    conn.authorize('password', '%s:%s' % (str(servconfig.graphservUser), str(servconfig.graphservPassword)))
     
     for i in instanceconfig:
         log("checking %s with refresh interval %s hours" % (i.name, i.refreshIntervalHours))
@@ -137,26 +188,29 @@ def CheckGraphcores(servconfig, instanceconfig):
             except client.gpException as ex:
                 log('exception caught before trying to reload. server down/graphserv crashed?')
                 raise
-            log('reloading graph %s' % str(i.name))
-            # TODO: write something better than the dreaded readwiki.sh hack, and do some error checking
-            if servconfig.remoteHost=='localhost':
-                args= []
+            log('reloading graph %s...' % str(i.name))
+            if False:
+                # TODO: write something better than the dreaded readwiki.sh hack, and do some error checking
+                if servconfig.remoteHost=='localhost':
+                    args= []
+                else:
+                    args= ['ssh', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
+                args= 'GRAPHSERV_HOST=%(remoteHost)s GRAPHSERV_PORT=%(graphservPort)s /mnt/user-store/jkroll/graphserv-instance/readwiki.sh ' % servconfig.__dict__
+                args= args + i.name
+                log(args)
+                p= subprocess.Popen(args,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, shell=True)
+                while p.returncode==None:
+                    line= p.stdout.readline()
+                    if len(line): log("\t%s" % line)
+                    else: time.sleep(0.2)
+                    p.poll()
+                if p.returncode!=0:
+                    log("child error code was %s" % p.returncode)
+                else:
+                    log("imported %s." % str(i.name))
             else:
-                args= ['ssh', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
-            args= 'GRAPHSERV_HOST=%(remoteHost)s GRAPHSERV_PORT=%(graphservPort)s /mnt/user-store/jkroll/graphserv-instance/readwiki.sh ' % servconfig.__dict__
-            args= args + i.name
-            log(args)
-            p= subprocess.Popen(args,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, shell=True)
-            while p.returncode==None:
-                line= p.stdout.readline()
-                if len(line): log("\t%s" % line)
-                else: time.sleep(0.2)
-                p.poll()
-            if p.returncode!=0:
-                log("child error code was %s" % p.returncode)
-            else:
-                log("imported %s." % str(i.name))
+                ReloadGraph(conn, str(i.name))
     conn.close()
 
 
