@@ -63,7 +63,7 @@ class GraphcoreInstanceConfig(list):
         [ 
             {"name": "dewiki", "refreshIntervalHours": "1.0"},
             {"name": "frwiki", "refreshIntervalHours": "2.0"},
-            {"name": "enwiki", "refreshIntervalHours": "3.5"}
+            {"name": "enwiki.categoriesonly", "refreshIntervalHours": "3.5", "namespaces": [14] }
         ]
         """
         v= json.load(file)
@@ -71,7 +71,7 @@ class GraphcoreInstanceConfig(list):
             entry= GraphcoreInstanceConfig.Entry()
             #~ entry.__dict__= i
             for k in i:
-                entry.__dict__[str(k)]= str(i[k])
+                entry.__dict__[str(k)]= i[k]
             self.append(entry)
 
 def CheckGraphserv(servconfig):
@@ -90,7 +90,7 @@ def CheckGraphserv(servconfig):
                     args= []
                 else:
                     args= ['ssh', '-f', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
-                args= args + shlex.split('nohup screen -dm -S mytestsession bash -c "mkdir -p %(graphservWorkDir)s && cd %(graphservWorkDir)s && \
+                args= args + shlex.split('nohup screen -dm -S graphserv bash -c "mkdir -p %(graphservWorkDir)s && cd %(graphservWorkDir)s && \
 %(graphservExecutable)s -t %(graphservPort)s -H %(graphservHttpPort)s -l eia -c %(graphcoreExecutable)s 2>&1 \
 | tee graphserv-$(date +%%F_%%T).log"' % servconfig.__dict__)
                 log(args)
@@ -123,35 +123,34 @@ def ReloadGraph(conn, instance, namespaces= '*'):
     timestamp= d.strftime("%Y-%m-%dT%H:%M:%S")
     feedertimestamp= d.strftime('%Y%m%d%H%M%S')
     log ('timestamp: %s, feedertimestamp: %s' % (timestamp, feedertimestamp))
+    dbname= instance.split('_')[0]
     
-    query= """SELECT /* SLOW_OK */ B.page_id, cl_from FROM categorylinks 
-JOIN page AS B 
-ON B.page_title = cl_to 
-AND B.page_namespace = 14 
-AND B.page_id!=0 
-AND cl_from!=0"""
+    #~ query= """SELECT /* SLOW_OK */ B.page_id, cl_from FROM categorylinks 
+#~ JOIN page AS B 
+#~ ON B.page_title = cl_to 
+#~ AND B.page_namespace = 14 
+#~ AND B.page_id!=0 
+#~ AND cl_from!=0"""
+    query= """select /* SLOW_OK */ B.page_id, N.page_id 
+from page as N
+join categorylinks on cl_from = N.page_id
+join page as B 
+on B.page_title = cl_to 
+and B.page_namespace = 14"""
+# where N.page_namespace = 14;"""
     if namespaces!='*':
-        query+= ('\nAND (')
+        query+= ('\nWHERE (')
         namespaces= list(namespaces)
-        for i in range(len(namespaces)): namespaces[i]= 'page_namespace=%s' % namespaces[i]
+        for i in range(len(namespaces)): namespaces[i]= 'N.page_namespace=%s' % namespaces[i]
         query+= (' OR '.join(namespaces))
         query+= ')'
-    log('%s: %s' % (instance, query))
+    log('%s: running sql import query, namespaces=%s' % (instance, str(namespaces)))
+    log(query)
 
-    #~ conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(instance))
-    #~ cur= conn.cursor()
-    #~ cur.execute('USE %s_p' % instance)
-    #~ cur.execute(query)
-    #~ with open('/tmp/foo', 'w') as outfile:
-        #~ while True:
-            #~ row= cur.fetchone()
-            #~ if not row: break
-            #~ outfile.write('%d, %d\n' % (row[0], row[1]))
-    
     # get arcs from sql
     tmpnam= '/tmp/foo'  #xxx change
     import _mysql
-    db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(instance), db=instance+'_p')
+    db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
     db.query(query)
     result= db.use_result()
     with open(tmpnam, 'w') as outfile:
@@ -166,10 +165,14 @@ AND cl_from!=0"""
         conn.use_graph(instance)
     except Exception as ex:
         log(str(ex))
+        log("creating graph: %s" % instance)
         conn.create_graph(instance)
         conn.use_graph(instance)
 
     conn.allowPipes= True
+    
+    log("clearing graphcore")
+    conn.execute("clear");
     
     log("sending arcs to graphcore")
     
@@ -250,7 +253,9 @@ def CheckGraphcores(servconfig, instanceconfig):
                 else:
                     log("imported %s." % str(i.name))
             else:
-                ReloadGraph(conn, str(i.name))
+                ReloadGraph(conn, 
+                    i.db if 'db' in i.__dict__ else str(i.name), 
+                    i.namespaces if 'namespaces' in i.__dict__ else '*')
     conn.close()
 
 
