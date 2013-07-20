@@ -1821,7 +1821,8 @@ class Connection(object):
         if type(command) != str:
             return False
         
-        if not re.match('^[a-zA-Z_][-\w]*\s*(:?\s*$|[\s!&]+\w|[|<>#])', command):
+        #~ if not re.match('^[a-zA-Z_][-\w]*\s*(:?\s*$|[\s!&]+\w|[|<>#])', command):
+        if not re.match('^[a-zA-Z_][-\w]*\s*', command):
             return False        # must start with a valid command
             
         if re.search('[\0-\x1F\x80-\xFF]', command):

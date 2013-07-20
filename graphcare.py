@@ -258,12 +258,60 @@ def CheckGraphcores(servconfig, instanceconfig):
                     i.namespaces if 'namespaces' in i.__dict__ else '*')
     conn.close()
 
+def DumpAllGraphs(servconfig):
+    conn= client.Connection(client.ClientTransport(servconfig.remoteHost, int(servconfig.graphservPort)))
+    conn.strictArguments= False
+    conn.connect()
+    conn.authorize('password', '%s:%s' % (str(servconfig.graphservUser), str(servconfig.graphservPassword)))
+    
+    dumpdir= os.path.join(servconfig.graphservWorkDir, 'dumps')
+    if not os.path.isdir(dumpdir):
+        os.mkdir(dumpdir)
+        log('created %s.' % dumpdir)
+    
+    graphs= conn.capture_list_graphs()
+    for line in graphs:
+        graph= line[0]
+        dest= os.path.join(dumpdir, graph+'.dump')
+        log('dumping %s to %s.' % (graph, dest))
+        conn.use_graph(graph)
+        conn.dump_graph(dest)
 
+    conn.close()
+    log('done.')
+    
+
+def LoadAllGraphs(servconfig):
+    conn= client.Connection(client.ClientTransport(servconfig.remoteHost, int(servconfig.graphservPort)))
+    conn.strictArguments= False
+    conn.connect()
+    conn.authorize('password', '%s:%s' % (str(servconfig.graphservUser), str(servconfig.graphservPassword)))
+    
+    dumpdir= os.path.join(servconfig.graphservWorkDir, 'dumps')
+    for f in os.listdir(dumpdir):
+        graphname= os.path.splitext(f)[0]
+        try:
+            conn.use_graph(graphname)
+            log('clearing existing graph %s.' % graphname)
+            conn.clear()
+        except client.gpClientException:
+            log('creating graph %s.' % graphname)
+            conn.create_graph(graphname)
+            conn.use_graph(graphname)
+        filename= os.path.join(dumpdir, f)
+        log('loading graph %s from %s.' % (graphname, filename))
+        conn.load_graph(filename)
+
+    conn.close()
+    log('done.')
+    
 
 if __name__ == '__main__':
-    parser= argparse.ArgumentParser(description= 'Catgraph Maintenance Job Script.')
+    parser= argparse.ArgumentParser(description= 'Catgraph Maintenance Job Script.', formatter_class= argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-s', '--server-config', default='~/.graphcare-serverconfig.json', help='server config file. ' + GraphservConfig.__init__.__doc__)
     parser.add_argument('-i', '--instance-config', default='~/.graphcare-instanceconfig.json', help='instance config file. ' + GraphcoreInstanceConfig.__init__.__doc__)
+    parser.add_argument('-a', '--action', default='update', choices=['update', 'dump-all-graphs', 'load-all-graphs'], 
+        help='action to run. \n* update: start graphserv if necessary, update graphs (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
     args= parser.parse_args()
     
@@ -271,7 +319,13 @@ if __name__ == '__main__':
     
     instances= GraphcoreInstanceConfig(open(os.path.expanduser(args.instance_config)))
 
-    CheckGraphserv(gc)
-    CheckGraphcores(gc, instances)
+    if args.action=='update':
+        CheckGraphserv(gc)
+        CheckGraphcores(gc, instances)
+    elif args.action=='dump-all-graphs':
+        DumpAllGraphs(gc)
+    elif args.action=='load-all-graphs':
+        CheckGraphserv(gc)
+        LoadAllGraphs(gc)
     
     sys.exit(0)
