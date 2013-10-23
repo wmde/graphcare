@@ -1,0 +1,1 @@
+This script ensures that a Graphserv instance is running and updates it with category/page data from Wikipedia. It is started periodically from a cron job on sylvester.wmflabs.org. See --help for more info.
