@@ -18,6 +18,7 @@ import time
 import datetime
 import shlex
 import MySQLdb
+import socket
 from gp import *
 
 def MakeLogTimestamp(unixtime= None):
@@ -45,10 +46,15 @@ class GraphservConfig:
         self.graphservUser= ''
         self.graphservPassword= ''
         self.graphservWorkDir= '/mnt/user-store/jkroll/graphserv-instance/'
-        self.graphservExecutable= '../graphserv/graphserv.dbg'
-        self.graphcoreExecutable= '../graphserv/graphcore/graphcore'
+        self.graphservExecutable= '$HOME/graphserv/graphserv.dbg'
+        self.graphcoreExecutable= '$HOME/graphserv/graphcore/graphcore'
         self.sshUser= ''
         self.loadJson(file)
+        self.graphservWorkDir= os.path.expanduser(os.path.expandvars(self.graphservWorkDir))
+        self.graphservExecutable= os.path.expanduser(os.path.expandvars(self.graphservExecutable))
+        self.graphcoreExecutable= os.path.expanduser(os.path.expandvars(self.graphcoreExecutable))
+        thishost= socket.gethostname()
+        self.graphservWorkDir= os.path.join(self.graphservWorkDir, thishost)
     
     def loadJson(self, file):
         values= json.load(file)
@@ -91,7 +97,7 @@ def CheckGraphserv(servconfig):
                 else:
                     args= ['ssh', '-f', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
                 args= args + shlex.split('nohup screen -dm -S graphserv bash -c "mkdir -p %(graphservWorkDir)s && cd %(graphservWorkDir)s && \
-%(graphservExecutable)s -t %(graphservPort)s -H %(graphservHttpPort)s -l eia -c %(graphcoreExecutable)s 2>&1 \
+%(graphservExecutable)s -t %(graphservPort)s -H %(graphservHttpPort)s -l eia -c %(graphcoreExecutable)s -p ../gspasswd.conf -g ../gsgroups.conf 2>&1 \
 | tee graphserv-$(date +%%F_%%T).log"' % servconfig.__dict__)
                 log(args)
                 p= subprocess.Popen(args,
@@ -141,10 +147,11 @@ and B.page_namespace = 14"""
     if namespaces!='*':
         query+= ('\nWHERE (')
         namespaces= list(namespaces)
-        for i in range(len(namespaces)): namespaces[i]= 'N.page_namespace=%s' % namespaces[i]
-        query+= (' OR '.join(namespaces))
+        nslist= []
+        for i in range(len(namespaces)): nslist.append('N.page_namespace=%s' % namespaces[i])
+        query+= (' OR '.join(nslist))
         query+= ')'
-    log('%s: running sql import query, namespaces=%s' % (instance, str(namespaces)))
+    log('%s: running sql import query, namespaces=%s' % (instance, str(nslist)))
     log(query)
 
     # get arcs from sql
@@ -186,7 +193,7 @@ and B.page_namespace = 14"""
     conn.execute("set-meta gpfeeder_graph_type with-leafs")
     conn.execute("set-meta gpfeeder_status polling")
     conn.execute("set-meta gpfeeder_timestamp %s" % feedertimestamp)
-    conn.execute("set-meta gpfeeder_namespaces %s" % ('*' if namespaces=='*' else (','.join(namespaces))))
+    conn.execute("set-meta gpfeeder_namespaces %s" % ('*' if namespaces=='*' else ('_'.join([str(i) for i in namespaces]))))
     conn.execute("set-meta gpfeeder_dels_offset 0")
     conn.execute("set-meta gpfeeder_dels_state up_to_date")
     conn.execute("set-meta gpfeeder_dels_until %s" % feedertimestamp)
