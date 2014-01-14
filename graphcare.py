@@ -151,7 +151,7 @@ and B.page_namespace = 14"""
         for i in range(len(namespaces)): nslist.append('N.page_namespace=%s' % namespaces[i])
         query+= (' OR '.join(nslist))
         query+= ')'
-    log('%s: running sql import query, namespaces=%s' % (instance, str(nslist)))
+    log('%s: running sql import query, namespaces=%s' % (instance, str(namespaces)))
     log(query)
 
     # get arcs from sql
