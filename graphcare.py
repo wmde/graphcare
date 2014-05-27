@@ -1,15 +1,7 @@
 #!/usr/bin/python
-#$ -l h_rt=0:30:00 
-#$ -l virtual_free=100M 
-#$ -l arch=sol 
-#$ -l fs-user-store=1
-#$ -t 1
-#$ -N graphcare 
-#$ -m ae
-#$ -wd /home/jkroll/graphcare/logs
-#$ -b y
 # -*- coding:utf-8 -*-
 import os
+import errno
 import sys
 import argparse
 import json
@@ -19,7 +11,12 @@ import datetime
 import shlex
 import MySQLdb
 import socket
+import re
+import csv
 from gp import *
+
+myhostname= socket.gethostname()
+
 
 def MakeLogTimestamp(unixtime= None):
     if unixtime==None: unixtime= time.time()
@@ -53,8 +50,7 @@ class GraphservConfig:
         self.graphservWorkDir= os.path.expanduser(os.path.expandvars(self.graphservWorkDir))
         self.graphservExecutable= os.path.expanduser(os.path.expandvars(self.graphservExecutable))
         self.graphcoreExecutable= os.path.expanduser(os.path.expandvars(self.graphcoreExecutable))
-        thishost= socket.gethostname()
-        self.graphservWorkDir= os.path.join(self.graphservWorkDir, thishost)
+        self.graphservWorkDir= os.path.join(self.graphservWorkDir, myhostname)
     
     def loadJson(self, file):
         values= json.load(file)
@@ -301,7 +297,7 @@ def LoadAllGraphs(servconfig):
             conn.use_graph(graphname)
             log('clearing existing graph %s.' % graphname)
             conn.clear()
-        except client.gpClientException:
+        except client.gpProcessorException:
             log('creating graph %s.' % graphname)
             conn.create_graph(graphname)
             conn.use_graph(graphname)
@@ -311,17 +307,110 @@ def LoadAllGraphs(servconfig):
 
     conn.close()
     log('done.')
+
+
+#~ http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else: raise
+
+def RefreshHostmap(servconfig):
+    mapdir= os.path.expanduser("~/hostmap")
+    mkdir_p(mapdir)
+    conn= client.Connection(client.ClientTransport(servconfig.remoteHost, int(servconfig.graphservPort)))
+    conn.strictArguments= False
+    conn.connect()
+    graphs= conn.capture_list_graphs()
+    graphs= set( i[0] for i in graphs )
+    graphtohost= { }
+    for file in os.listdir(mapdir):
+        fpath= os.path.join(mapdir, file)
+        if (not os.path.isfile(fpath)) or fpath.endswith('.json'): continue
+        host= open(fpath, 'r').read().strip()
+        if file in graphs:
+            # if this graph is running on any host, don't map it to this host.
+            graphs.remove(file)
+            graphtohost[file]= host
+        elif host == myhostname:
+            # if this graph is no longer running on this host, remove the mapping.
+            log('removing graph %s from host map' % file)
+            os.remove(os.path.join(mapdir, file))
+        else:
+            graphtohost[file]= host
+    for graph in graphs:
+        log('mapping graph %s to host %s' % (graph, myhostname))
+        mapfilename= os.path.join(mapdir, graph)
+        tmpname= mapfilename + '.%s.tmp' % myhostname   # assumes this script does not run in parallel on the same host!
+        with open(tmpname, 'w') as f: f.write(myhostname)
+        os.rename(tmpname, mapfilename)
+        graphtohost[graph]= myhostname
+    hostmapname= os.path.join(mapdir, 'graphs.json')
+    tmpname= '%s.%s.tmp' % (hostmapname, myhostname)
+    with open(tmpname, 'w') as f: json.dump(graphtohost, f)
+    os.rename(tmpname, hostmapname)
     
+# get list of wikipedia DB names to import
+def GetWikis():
+    wikis= []
+    # crude way to get all known wikis: parse the hosts file for labsdb host names...
+    with open('/etc/hosts') as f:
+        for line in f:
+            m= re.match(".* (.*)wiki\.labsdb.*", line)
+            if(m):
+                dbname= m.group(1) + 'wiki'
+                try:
+                    conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
+                    cursor= conn.cursor()
+                    cursor.execute('SELECT * FROM categorylinks LIMIT 1')
+                    cursor.fetchall()
+                    cursor.execute('SELECT * FROM page LIMIT 1')
+                    cursor.fetchall()
+                    cursor.close()
+                    conn.close()
+                    wikis.append(dbname)
+                except MySQLdb.ProgrammingError:
+                    pass
+    return wikis
+
+def ListWikis():
+    writer= csv.DictWriter(sys.stdout, fieldnames= [ "Wiki", "Category Links", "Category Links incl. Leaves", "RAM Estimate Cat. Links (MB)", "RAM Estimate Leaf Links (MB)" ] )
+    writer.writeheader()
+    for dbname in GetWikis():
+        #~ if dbname=='enwiki': continue
+        conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
+        cursor= conn.cursor()
+        query= "select count(*) from categorylinks where cl_type = 'subcat'"
+        cursor.execute(query)
+        subcatlinks= int(cursor.fetchall()[0][0])
+        query= "select count(*) from categorylinks"
+        cursor.execute(query)
+        leaflinks= int(cursor.fetchall()[0][0])
+        writer.writerow({ "Wiki": dbname, 
+                "Category Links": subcatlinks, 
+                "Category Links incl. Leaves": leaflinks, 
+                "RAM Estimate Cat. Links (MB)": (subcatlinks * 16.1 + 1024*1024) / (1024*1024), 
+                "RAM Estimate Leaf Links (MB)": (leaflinks * 16.1 + 1024*1024) / (1024*1024)})
+        sys.stdout.flush()
+
 
 if __name__ == '__main__':
     parser= argparse.ArgumentParser(description= 'Catgraph Maintenance Job Script.', formatter_class= argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-s', '--server-config', default='~/.graphcare-serverconfig.json', help='server config file. ' + GraphservConfig.__init__.__doc__)
     parser.add_argument('-i', '--instance-config', default='~/.graphcare-instanceconfig.json', help='instance config file. ' + GraphcoreInstanceConfig.__init__.__doc__)
-    parser.add_argument('-a', '--action', default='update', choices=['update', 'dump-all-graphs', 'load-all-graphs'], 
-        help='action to run. \n* update: start graphserv if necessary, update graphs (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
+    parser.add_argument('-a', '--action', default='update', 
+        choices=['update', 'dump-all-graphs', 'load-all-graphs', 'refresh-host-map', 'list-wikis'], 
+        help='action to run. \n* update: start graphserv if necessary, update graphs, refresh hostmap (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
     args= parser.parse_args()
     
+    if args.action=='list-wikis':
+        ListWikis()
+        sys.exit(0)
+
     gc= GraphservConfig(open(os.path.expanduser(args.server_config)))
     
     instances= GraphcoreInstanceConfig(open(os.path.expanduser(args.instance_config)))
@@ -329,10 +418,13 @@ if __name__ == '__main__':
     if args.action=='update':
         CheckGraphserv(gc)
         CheckGraphcores(gc, instances)
+        RefreshHostmap(gc)
     elif args.action=='dump-all-graphs':
         DumpAllGraphs(gc)
     elif args.action=='load-all-graphs':
         CheckGraphserv(gc)
         LoadAllGraphs(gc)
+    elif args.action=='refresh-host-map':
+        RefreshHostmap(gc)
     
     sys.exit(0)
