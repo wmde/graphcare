@@ -117,7 +117,7 @@ def GetSQLServerForDB(wiki):    # wiki is dbname without '_p' suffix
     return '%s.labsdb' % wiki   # only on labs!
     
 
-def ReloadGraph(conn, instance, namespaces= '*'):
+def ReloadGraph(conn, instance, dbname, sqlhost, namespaces= '*'):
     #~ timestamp=$(date --rfc-3339=seconds|sed -e 's/ /_/g')
     #~ feedertimestamp=$(date +%Y%m%d%H%M%S)
     d= datetime.datetime.utcnow()
@@ -125,7 +125,6 @@ def ReloadGraph(conn, instance, namespaces= '*'):
     timestamp= d.strftime("%Y-%m-%dT%H:%M:%S")
     feedertimestamp= d.strftime('%Y%m%d%H%M%S')
     log ('timestamp: %s, feedertimestamp: %s' % (timestamp, feedertimestamp))
-    dbname= instance.split('_')[0]
     
     #~ query= """SELECT /* SLOW_OK */ B.page_id, cl_from FROM categorylinks 
 #~ JOIN page AS B 
@@ -147,13 +146,13 @@ and B.page_namespace = 14"""
         for i in range(len(namespaces)): nslist.append('N.page_namespace=%s' % namespaces[i])
         query+= (' OR '.join(nslist))
         query+= ')'
-    log('%s: running sql import query, namespaces=%s' % (instance, str(namespaces)))
+    log('%s: running sql import query, namespaces=%s, database %s on sql host %s' % (instance, str(namespaces), dbname, sqlhost))
     log(query)
 
     # get arcs from sql
     tmpnam= '/tmp/foo'  #xxx change
     import _mysql
-    db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
+    db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=sqlhost, db=dbname)
     db.query(query)
     result= db.use_result()
     with open(tmpnam, 'w') as outfile:
@@ -235,9 +234,15 @@ def CheckGraphcores(servconfig, instanceconfig):
                 log('exception caught before trying to reload. server down/graphserv crashed?')
                 raise
             log('reloading graph %s...' % str(i.name))
+            #~ print "servconfig: ", servconfig.__dict__
+            #~ print "instance: ", i.__dict__
+            instancename= str(i.name)
+            db= i.db if 'db' in i.__dict__ else instancename.split('_')[0]
             ReloadGraph(conn, 
-                i.db if 'db' in i.__dict__ else str(i.name), 
-                i.namespaces if 'namespaces' in i.__dict__ else '*')
+                instance= instancename,
+                dbname= db,
+                sqlhost= servconfig.sqlHost if 'sqlHost' in servconfig.__dict__ else GetSQLServerForDB(db) + '_p', 
+                namespaces= i.namespaces if 'namespaces' in i.__dict__ else '*')
     conn.close()
 
 def DumpAllGraphs(servconfig):
