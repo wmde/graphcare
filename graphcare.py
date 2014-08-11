@@ -235,30 +235,9 @@ def CheckGraphcores(servconfig, instanceconfig):
                 log('exception caught before trying to reload. server down/graphserv crashed?')
                 raise
             log('reloading graph %s...' % str(i.name))
-            if False:
-                # TODO: write something better than the dreaded readwiki.sh hack, and do some error checking
-                if servconfig.remoteHost=='localhost':
-                    args= []
-                else:
-                    args= ['ssh', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
-                args= 'GRAPHSERV_HOST=%(remoteHost)s GRAPHSERV_PORT=%(graphservPort)s /mnt/user-store/jkroll/graphserv-instance/readwiki.sh ' % servconfig.__dict__
-                args= args + i.name
-                log(args)
-                p= subprocess.Popen(args,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, shell=True)
-                while p.returncode==None:
-                    line= p.stdout.readline()
-                    if len(line): log("\t%s" % line)
-                    else: time.sleep(0.2)
-                    p.poll()
-                if p.returncode!=0:
-                    log("child error code was %s" % p.returncode)
-                else:
-                    log("imported %s." % str(i.name))
-            else:
-                ReloadGraph(conn, 
-                    i.db if 'db' in i.__dict__ else str(i.name), 
-                    i.namespaces if 'namespaces' in i.__dict__ else '*')
+            ReloadGraph(conn, 
+                i.db if 'db' in i.__dict__ else str(i.name), 
+                i.namespaces if 'namespaces' in i.__dict__ else '*')
     conn.close()
 
 def DumpAllGraphs(servconfig):
