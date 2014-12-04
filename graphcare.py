@@ -366,6 +366,7 @@ def GetWikis():
                         pass
     return wikis
 
+# action 'wiki-stats'
 def ListWikis():
     writer= csv.DictWriter(sys.stdout, fieldnames= [ "Wiki", "Category Links", "Category Links incl. Leaves", 
         "RAM Estimate Cat. Links (MB)", "RAM Estimate Leaf Links (MB)", "Graph exists (Categories only)", "Graph exists (incl. Leaves)" ] )
@@ -390,19 +391,34 @@ def ListWikis():
                 "Graph exists (incl. Leaves)": (dbname in existing_graphs) })
         sys.stdout.flush()
 
+# action 'create-instanceconfig-missingwikis'
+def CreateMissingWikisInstanceconfig():
+    config= []
+    existing_graphs= set(GetHostmap())
+    wikis= set(GetWikis())
+    missing_wikis= wikis - existing_graphs
+    for wiki in missing_wikis:
+        config.append( { "name": wiki + "_ns14",
+            "refreshIntervalHours": "4.0", 
+            "namespaces": [ 14 ] } );
+    print json.dumps(config, indent=4)
+    
 
 if __name__ == '__main__':
     parser= argparse.ArgumentParser(description= 'Catgraph Maintenance Job Script.', formatter_class= argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-s', '--server-config', default='~/.graphcare-serverconfig.json', help='server config file. ' + GraphservConfig.__init__.__doc__)
     parser.add_argument('-i', '--instance-config', default='~/.graphcare-instanceconfig.json', help='instance config file. ' + GraphcoreInstanceConfig.__init__.__doc__)
     parser.add_argument('-a', '--action', default='update', 
-        choices=['update', 'dump-all-graphs', 'load-all-graphs', 'refresh-host-map', 'list-wikis'], 
+        choices=['update', 'dump-all-graphs', 'load-all-graphs', 'refresh-host-map', 'wiki-stats', 'create-instanceconfig-missingwikis'], 
         help='action to run. \n* update: start graphserv if necessary, update graphs, refresh hostmap (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
     args= parser.parse_args()
     
-    if args.action=='list-wikis':
+    if args.action=='wiki-stats':
         ListWikis()
+        sys.exit(0)
+    if args.action=='create-instanceconfig-missingwikis':
+        CreateMissingWikisInstanceconfig()
         sys.exit(0)
 
     gc= GraphservConfig(open(os.path.expanduser(args.server_config)))
