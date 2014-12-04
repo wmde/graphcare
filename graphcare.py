@@ -302,6 +302,11 @@ def mkdir_p(path):
             pass
         else: raise
 
+# get wiki-to-host mapping as dict
+def GetHostmap():
+    with open(os.path.expanduser("~/hostmap/graphs.json")) as f:
+        return json.load(f)
+
 def RefreshHostmap(servconfig):
     mapdir= os.path.expanduser("~/hostmap")
     mkdir_p(mapdir)
@@ -343,26 +348,29 @@ def GetWikis():
     # crude way to get all known wikis: parse the hosts file for labsdb host names...
     with open('/etc/hosts') as f:
         for line in f:
-            m= re.match(".* (.*)wiki\.labsdb.*", line)
-            if(m):
-                dbname= m.group(1) + 'wiki'
-                try:
-                    conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
-                    cursor= conn.cursor()
-                    cursor.execute('SELECT * FROM categorylinks LIMIT 1')
-                    cursor.fetchall()
-                    cursor.execute('SELECT * FROM page LIMIT 1')
-                    cursor.fetchall()
-                    cursor.close()
-                    conn.close()
-                    wikis.append(dbname)
-                except MySQLdb.ProgrammingError:
-                    pass
+            m= re.findall("\W(\w{2,3}wiki.labsdb)+", line)
+            if m:
+                for hostname in m:
+                    dbname= hostname.split('.')[0]
+                    try:
+                        conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
+                        cursor= conn.cursor()
+                        cursor.execute('SELECT * FROM categorylinks LIMIT 1')
+                        cursor.fetchall()
+                        cursor.execute('SELECT * FROM page LIMIT 1')
+                        cursor.fetchall()
+                        cursor.close()
+                        conn.close()
+                        wikis.append(dbname)
+                    except MySQLdb.ProgrammingError:
+                        pass
     return wikis
 
 def ListWikis():
-    writer= csv.DictWriter(sys.stdout, fieldnames= [ "Wiki", "Category Links", "Category Links incl. Leaves", "RAM Estimate Cat. Links (MB)", "RAM Estimate Leaf Links (MB)" ] )
+    writer= csv.DictWriter(sys.stdout, fieldnames= [ "Wiki", "Category Links", "Category Links incl. Leaves", 
+        "RAM Estimate Cat. Links (MB)", "RAM Estimate Leaf Links (MB)", "Graph exists (Categories only)", "Graph exists (incl. Leaves)" ] )
     writer.writeheader()
+    existing_graphs= GetHostmap()
     for dbname in GetWikis():
         #~ if dbname=='enwiki': continue
         conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
@@ -377,7 +385,9 @@ def ListWikis():
                 "Category Links": subcatlinks, 
                 "Category Links incl. Leaves": leaflinks, 
                 "RAM Estimate Cat. Links (MB)": (subcatlinks * 16.1 + 1024*1024) / (1024*1024), 
-                "RAM Estimate Leaf Links (MB)": (leaflinks * 16.1 + 1024*1024) / (1024*1024)})
+                "RAM Estimate Leaf Links (MB)": (leaflinks * 16.1 + 1024*1024) / (1024*1024),
+                "Graph exists (Categories only)": (dbname+'_ns14' in existing_graphs), 
+                "Graph exists (incl. Leaves)": (dbname in existing_graphs) })
         sys.stdout.flush()
 
 
