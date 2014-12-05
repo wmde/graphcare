@@ -113,13 +113,15 @@ def CheckGraphserv(servconfig):
     raise Exception("tried restarting graphserv for 3 times, giving up.") 
 
 
-def GetSQLServerForDB(wiki):    # wiki is dbname without '_p' suffix
+def GetSQLServerForDB(wiki):    # wiki is dbname with or without '_p' suffix
+    if '_' in wiki: wiki= wiki.split('_')[0]
     return '%s.labsdb' % wiki   # only on labs!
     
 
 def ReloadGraph(conn, instance, dbname, sqlhost, namespaces= '*'):
     #~ timestamp=$(date --rfc-3339=seconds|sed -e 's/ /_/g')
     #~ feedertimestamp=$(date +%Y%m%d%H%M%S)
+    log("ReloadGraph: dbname: %s, sqlhost: %s" % (dbname, sqlhost)) 
     d= datetime.datetime.utcnow()
     #~ timestamp= d.isoformat('_')
     timestamp= d.strftime("%Y-%m-%dT%H:%M:%S")
@@ -237,11 +239,11 @@ def CheckGraphcores(servconfig, instanceconfig):
             #~ print "servconfig: ", servconfig.__dict__
             #~ print "instance: ", i.__dict__
             instancename= str(i.name)
-            db= i.db if 'db' in i.__dict__ else instancename.split('_')[0]
+            db= i.db if 'db' in i.__dict__ else instancename.split('_')[0] + '_p'
             ReloadGraph(conn, 
                 instance= instancename,
                 dbname= db,
-                sqlhost= servconfig.sqlHost if 'sqlHost' in servconfig.__dict__ else GetSQLServerForDB(db) + '_p', 
+                sqlhost= servconfig.sqlHost if 'sqlHost' in servconfig.__dict__ else GetSQLServerForDB(db), 
                 namespaces= i.namespaces if 'namespaces' in i.__dict__ else '*')
     conn.close()
 
