@@ -77,7 +77,9 @@ class GraphcoreInstanceConfig(list):
             self.append(entry)
 
 def CheckGraphserv(servconfig):
-    for i in range(0, 3):
+    starttime= time.time()
+    maxwaittime= 15
+    while time.time()-starttime < maxwaittime:
         try:
             conn= client.Connection(client.ClientTransport(servconfig.remoteHost, int(servconfig.graphservPort)))
             conn.connect()
@@ -109,8 +111,8 @@ def CheckGraphserv(servconfig):
             except subprocess.CalledProcessError as ex:
                 print "Exception: %s\n" % str(ex)
                 print str(ex.output)
-        time.sleep(5)
-    raise Exception("tried restarting graphserv for 3 times, giving up.") 
+        time.sleep(.5)
+    raise Exception("tried restarting graphserv for %d seconds, giving up." % maxwaittime) 
 
 
 def GetSQLServerForDB(wiki):    # wiki is dbname with or without '_p' suffix
