@@ -423,7 +423,7 @@ if __name__ == '__main__':
     parser= argparse.ArgumentParser(description= 'Catgraph Maintenance Job Script.', formatter_class= argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-s', '--server-config', default='~/.graphcare-serverconfig.json', help='server config file. ' + GraphservConfig.__init__.__doc__)
     parser.add_argument('-i', '--instance-config', default='~/.graphcare-instanceconfig.json', help='instance config file. ' + GraphcoreInstanceConfig.__init__.__doc__)
-    parser.add_argument('-a', '--action', default='update', 
+    parser.add_argument('-a', '--action', action='append',
         choices=['update', 'dump-all-graphs', 'load-all-graphs', 'refresh-host-map', 'wiki-stats', 'create-instanceconfig-missingwikis'], 
         help='action to run. \n* update: start graphserv if necessary, update graphs, refresh hostmap (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
@@ -431,20 +431,24 @@ if __name__ == '__main__':
     gc= GraphservConfig().load(os.path.expanduser(args.server_config))
     instances= GraphcoreInstanceConfig(os.path.expanduser(args.instance_config))
 
-    if args.action=='update':
-        CheckGraphserv(gc)
-        CheckGraphcores(gc, instances)
-        RefreshHostmap(gc)
-    elif args.action=='dump-all-graphs':
-        DumpAllGraphs(gc)
-    elif args.action=='load-all-graphs':
-        CheckGraphserv(gc)
-        LoadAllGraphs(gc)
-    elif args.action=='refresh-host-map':
-        RefreshHostmap(gc)
-    elif args.action=='wiki-stats':
-        ListWikis(gc)
-    elif args.action=='create-instanceconfig-missingwikis':
-        CreateMissingWikisInstanceconfig(gc)
+    if not len(args.action):
+        args.action= ['update'] # default
+    
+    for action in args.action:
+        if action=='update':
+            CheckGraphserv(gc)
+            CheckGraphcores(gc, instances)
+            RefreshHostmap(gc)
+        elif action=='dump-all-graphs':
+            DumpAllGraphs(gc)
+        elif action=='load-all-graphs':
+            CheckGraphserv(gc)
+            LoadAllGraphs(gc)
+        elif action=='refresh-host-map':
+            RefreshHostmap(gc)
+        elif action=='wiki-stats':
+            ListWikis(gc)
+        elif action=='create-instanceconfig-missingwikis':
+            CreateMissingWikisInstanceconfig(gc)
     
     sys.exit(0)
