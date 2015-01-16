@@ -279,19 +279,22 @@ def LoadAllGraphs(servconfig):
     conn.authorize('password', '%s:%s' % (str(servconfig.graphservUser), str(servconfig.graphservPassword)))
     
     dumpdir= os.path.join(servconfig.graphservWorkDir, 'dumps')
-    for f in os.listdir(dumpdir):
-        graphname= os.path.splitext(f)[0]
-        try:
-            conn.use_graph(graphname)
-            log('clearing existing graph %s.' % graphname)
-            conn.clear()
-        except client.gpProcessorException:
-            log('creating graph %s.' % graphname)
-            conn.create_graph(graphname)
-            conn.use_graph(graphname)
-        filename= os.path.join(dumpdir, f)
-        log('loading graph %s from %s.' % (graphname, filename))
-        conn.load_graph(filename)
+    if not os.path.isdir(dumpdir):
+        log('no such directory %s.' % dumpdir)
+    else:
+        for f in os.listdir(dumpdir):
+            graphname= os.path.splitext(f)[0]
+            try:
+                conn.use_graph(graphname)
+                log('clearing existing graph %s.' % graphname)
+                conn.clear()
+            except client.gpProcessorException:
+                log('creating graph %s.' % graphname)
+                conn.create_graph(graphname)
+                conn.use_graph(graphname)
+            filename= os.path.join(dumpdir, f)
+            log('loading graph %s from %s.' % (graphname, filename))
+            conn.load_graph(filename)
 
     conn.close()
     log('done.')
