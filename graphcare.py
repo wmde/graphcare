@@ -134,20 +134,12 @@ def ReloadGraph(conn, instance, dbname, sqlhost, namespaces= '*'):
     timestamp= d.strftime("%Y-%m-%dT%H:%M:%S")
     feedertimestamp= d.strftime('%Y%m%d%H%M%S')
     log ('timestamp: %s, feedertimestamp: %s' % (timestamp, feedertimestamp))
-    
-    #~ query= """SELECT /* SLOW_OK */ B.page_id, cl_from FROM categorylinks 
-#~ JOIN page AS B 
-#~ ON B.page_title = cl_to 
-#~ AND B.page_namespace = 14 
-#~ AND B.page_id!=0 
-#~ AND cl_from!=0"""
     query= """select /* SLOW_OK */ B.page_id, N.page_id 
 from page as N
 join categorylinks on cl_from = N.page_id
 join page as B 
 on B.page_title = cl_to 
 and B.page_namespace = 14"""
-# where N.page_namespace = 14;"""
     if namespaces!='*':
         query+= ('\nWHERE (')
         namespaces= list(namespaces)
@@ -161,7 +153,7 @@ and B.page_namespace = 14"""
     import tempfile
     with tempfile.NamedTemporaryFile() as f:
         # get arcs from sql
-        tmpnam= f.name      #'/tmp/foo'  #xxx change
+        tmpnam= f.name
         import _mysql
         db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=sqlhost, db=dbname)
         db.query(query)
@@ -245,8 +237,6 @@ def CheckGraphcores(servconfig, instanceconfig):
                 log('exception caught before trying to reload. server down/graphserv crashed?')
                 raise
             log('reloading graph %s...' % str(i.name))
-            #~ print "servconfig: ", servconfig.__dict__
-            #~ print "instance: ", i.__dict__
             instancename= str(i.name)
             db= i.db if 'db' in i.__dict__ else instancename.split('_')[0] + '_p'
             ReloadGraph(conn, 
