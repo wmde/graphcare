@@ -407,6 +407,7 @@ def CreateMissingWikisInstanceconfig(servconfig):
     config= []
     existing_graphs= set(GetHostmap(servconfig))
     wikis= set(GetWikis())
+    wikis= set(filter(lambda name: name.endswith('_ns14'), wikis))
     missing_wikis= wikis - existing_graphs
     for wiki in missing_wikis:
         config.append( { "name": wiki + "_ns14",
