@@ -26,7 +26,7 @@ def log(s):
     print("[%s] %s" % (MakeLogTimestamp(), str(s).rstrip('\n')))
 
 class GraphservConfig:
-    def __init__(self, file):
+    def __init__(self):
         """ example config file contents:
         { 
             "remoteHost": "foo.bar.org",
@@ -35,6 +35,7 @@ class GraphservConfig:
             "graphservUser": "donalfonso",
             "graphservPassword": "secret",
             "sshUser": "donalfonso"
+            etc...
         }
         """
         self.remoteHost= 'ortelius.toolserver.org'
@@ -44,25 +45,27 @@ class GraphservConfig:
         self.graphservPassword= ''
         self.graphservWorkDir= '/mnt/user-store/jkroll/graphserv-instance/'
         self.graphservExecutable= '$HOME/graphserv/graphserv.dbg'
+        self.graphservParams= '-l eia'
         self.graphcoreExecutable= '$HOME/graphserv/graphcore/graphcore'
         self.hostmapPath= '$HOME/hostmap'
         self.sshUser= ''
-        self.loadJson(file)
+    
+    def load(self, filename):
+        values= json.load(open(filename))
+        for k in values:
+            self.__dict__[k]= str(values[k])
         self.graphservWorkDir= os.path.expanduser(os.path.expandvars(self.graphservWorkDir))
         self.graphservExecutable= os.path.expanduser(os.path.expandvars(self.graphservExecutable))
         self.graphcoreExecutable= os.path.expanduser(os.path.expandvars(self.graphcoreExecutable))
         self.graphservWorkDir= os.path.join(self.graphservWorkDir, myhostname)
         self.hostmapPath= os.path.expanduser(os.path.expandvars(self.hostmapPath))
-    
-    def loadJson(self, file):
-        values= json.load(file)
-        for k in values:
-            self.__dict__[k]= str(values[k])
+        return self
 
 class GraphcoreInstanceConfig(list):
     class Entry:
+        # could set defaults here
         pass
-    def __init__(self, file):
+    def __init__(self, filename):
         """ example config file contents:
         [ 
             {"name": "dewiki", "refreshIntervalHours": "1.0"},
@@ -70,7 +73,7 @@ class GraphcoreInstanceConfig(list):
             {"name": "enwiki.categoriesonly", "refreshIntervalHours": "3.5", "namespaces": [14] }
         ]
         """
-        v= json.load(file)
+        v= json.load(open(filename))
         for i in v:
             entry= GraphcoreInstanceConfig.Entry()
             #~ entry.__dict__= i
@@ -97,7 +100,7 @@ def CheckGraphserv(servconfig):
                 else:
                     args= ['ssh', '-f', '%(sshUser)s@%(remoteHost)s' % servconfig.__dict__ ]
                 args= args + shlex.split('nohup screen -dm -S graphserv bash -c "mkdir -p %(graphservWorkDir)s && cd %(graphservWorkDir)s && \
-%(graphservExecutable)s -t %(graphservPort)s -H %(graphservHttpPort)s -l eia -c %(graphcoreExecutable)s -p ../gspasswd.conf -g ../gsgroups.conf 2>&1 \
+%(graphservExecutable)s -t %(graphservPort)s -H %(graphservHttpPort)s -c %(graphcoreExecutable)s -p ../gspasswd.conf -g ../gsgroups.conf %(graphservParams)s 2>&1 \
 | tee graphserv-$(date +%%F_%%T).log"' % servconfig.__dict__)
                 log(args)
                 p= subprocess.Popen(args,
@@ -425,8 +428,8 @@ if __name__ == '__main__':
         help='action to run. \n* update: start graphserv if necessary, update graphs, refresh hostmap (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
     args= parser.parse_args()
-    gc= GraphservConfig(open(os.path.expanduser(args.server_config)))
-    instances= GraphcoreInstanceConfig(open(os.path.expanduser(args.instance_config)))
+    gc= GraphservConfig().load(os.path.expanduser(args.server_config))
+    instances= GraphcoreInstanceConfig(os.path.expanduser(args.instance_config))
 
     if args.action=='update':
         CheckGraphserv(gc)
