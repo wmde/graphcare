@@ -151,37 +151,39 @@ and B.page_namespace = 14"""
     log('%s: running sql import query, namespaces=%s, database %s on sql host %s' % (instance, str(namespaces), dbname, sqlhost))
     log(query)
 
-    # get arcs from sql
-    tmpnam= '/tmp/foo'  #xxx change
-    import _mysql
-    db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=sqlhost, db=dbname)
-    db.query(query)
-    result= db.use_result()
-    with open(tmpnam, 'w') as outfile:
-        while True:
-            row= result.fetch_row()
-            if not row: break
-            outfile.write('%d, %d\n' % (int(row[0][0]), int(row[0][1])))
-    db.close()
+    import tempfile
+    with tempfile.NamedTemporaryFile() as f:
+        # get arcs from sql
+        tmpnam= f.name      #'/tmp/foo'  #xxx change
+        import _mysql
+        db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=sqlhost, db=dbname)
+        db.query(query)
+        result= db.use_result()
+        with open(tmpnam, 'w') as outfile:
+            while True:
+                row= result.fetch_row()
+                if not row: break
+                outfile.write('%d, %d\n' % (int(row[0][0]), int(row[0][1])))
+        db.close()
 
-    # create/use graph
-    try:
-        conn.use_graph(instance)
-    except Exception as ex:
-        log(str(ex))
-        log("creating graph: %s" % instance)
-        conn.create_graph(instance)
-        conn.use_graph(instance)
+        # create/use graph
+        try:
+            conn.use_graph(instance)
+        except Exception as ex:
+            log(str(ex))
+            log("creating graph: %s" % instance)
+            conn.create_graph(instance)
+            conn.use_graph(instance)
 
-    conn.allowPipes= True
-    
-    log("clearing graphcore")
-    conn.execute("clear");
-    
-    log("sending arcs to graphcore")
-    
-    # load arcs from temp file into graphcore
-    conn.execute('add-arcs < %s' % tmpnam)
+        conn.allowPipes= True
+        
+        log("clearing graphcore")
+        conn.execute("clear");
+        
+        log("sending arcs to graphcore")
+        
+        # load arcs from temp file into graphcore
+        conn.execute('add-arcs < %s' % tmpnam)
     
     log("setting meta variables")
     
