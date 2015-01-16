@@ -45,12 +45,14 @@ class GraphservConfig:
         self.graphservWorkDir= '/mnt/user-store/jkroll/graphserv-instance/'
         self.graphservExecutable= '$HOME/graphserv/graphserv.dbg'
         self.graphcoreExecutable= '$HOME/graphserv/graphcore/graphcore'
+        self.hostmapPath= '$HOME/hostmap'
         self.sshUser= ''
         self.loadJson(file)
         self.graphservWorkDir= os.path.expanduser(os.path.expandvars(self.graphservWorkDir))
         self.graphservExecutable= os.path.expanduser(os.path.expandvars(self.graphservExecutable))
         self.graphcoreExecutable= os.path.expanduser(os.path.expandvars(self.graphcoreExecutable))
         self.graphservWorkDir= os.path.join(self.graphservWorkDir, myhostname)
+        self.hostmapPath= os.path.expanduser(os.path.expandvars(self.hostmapPath))
     
     def loadJson(self, file):
         values= json.load(file)
@@ -312,12 +314,12 @@ def mkdir_p(path):
         else: raise
 
 # get wiki-to-host mapping as dict
-def GetHostmap():
-    with open(os.path.expanduser("~/hostmap/graphs.json")) as f:
+def GetHostmap(servconfig):
+    with open(os.path.expanduser(os.path.join(servconfig.hostmapPath, "graphs.json"))) as f:
         return json.load(f)
 
 def RefreshHostmap(servconfig):
-    mapdir= os.path.expanduser("~/hostmap")
+    mapdir= os.path.expanduser(servconfig.hostmapPath)
     mkdir_p(mapdir)
     conn= client.Connection(client.ClientTransport(servconfig.remoteHost, int(servconfig.graphservPort)))
     conn.strictArguments= False
@@ -376,11 +378,11 @@ def GetWikis():
     return wikis
 
 # action 'wiki-stats'
-def ListWikis():
+def ListWikis(servconfig):
     writer= csv.DictWriter(sys.stdout, fieldnames= [ "Wiki", "Category Links", "Category Links incl. Leaves", 
         "RAM Estimate Cat. Links (MB)", "RAM Estimate Leaf Links (MB)", "Graph exists (Categories only)", "Graph exists (incl. Leaves)" ] )
     writer.writeheader()
-    existing_graphs= GetHostmap()
+    existing_graphs= GetHostmap(servconfig)
     for dbname in GetWikis():
         #~ if dbname=='enwiki': continue
         conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
@@ -401,9 +403,9 @@ def ListWikis():
         sys.stdout.flush()
 
 # action 'create-instanceconfig-missingwikis'
-def CreateMissingWikisInstanceconfig():
+def CreateMissingWikisInstanceconfig(servconfig):
     config= []
-    existing_graphs= set(GetHostmap())
+    existing_graphs= set(GetHostmap(servconfig))
     wikis= set(GetWikis())
     missing_wikis= wikis - existing_graphs
     for wiki in missing_wikis:
@@ -422,16 +424,7 @@ if __name__ == '__main__':
         help='action to run. \n* update: start graphserv if necessary, update graphs, refresh hostmap (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
     args= parser.parse_args()
-    
-    if args.action=='wiki-stats':
-        ListWikis()
-        sys.exit(0)
-    if args.action=='create-instanceconfig-missingwikis':
-        CreateMissingWikisInstanceconfig()
-        sys.exit(0)
-
     gc= GraphservConfig(open(os.path.expanduser(args.server_config)))
-    
     instances= GraphcoreInstanceConfig(open(os.path.expanduser(args.instance_config)))
 
     if args.action=='update':
@@ -445,5 +438,9 @@ if __name__ == '__main__':
         LoadAllGraphs(gc)
     elif args.action=='refresh-host-map':
         RefreshHostmap(gc)
+    elif args.action=='wiki-stats':
+        ListWikis(gc)
+    elif args.action=='create-instanceconfig-missingwikis':
+        CreateMissingWikisInstanceconfig(gc)
     
     sys.exit(0)
