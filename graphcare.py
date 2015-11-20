@@ -352,7 +352,7 @@ def GetWikis():
     # crude way to get all known wikis: parse the hosts file for labsdb host names...
     with open('/etc/hosts') as f:
         for line in f:
-            m= re.findall("\W(\w{2,3}wiki.labsdb)+", line)
+            m= re.findall("\W(\w{2,3}wik(?:i|tionary).labsdb)+", line)
             if m:
                 for hostname in m:
                     dbname= hostname.split('.')[0]
@@ -371,13 +371,14 @@ def GetWikis():
     return wikis
 
 # action 'wiki-stats'
-def ListWikis(servconfig):
+def WikiStats(servconfig):
     writer= csv.DictWriter(sys.stdout, fieldnames= [ "Wiki", "Category Links", "Category Links incl. Leaves", 
         "RAM Estimate Cat. Links (MB)", "RAM Estimate Leaf Links (MB)", "Graph exists (Categories only)", "Graph exists (incl. Leaves)" ] )
     writer.writeheader()
     existing_graphs= GetHostmap(servconfig)
     for dbname in GetWikis():
-        #~ if dbname=='enwiki': continue
+        if dbname=='enwiki': continue
+        #~ if not 'wiktionary' in dbname: continue
         conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
         cursor= conn.cursor()
         query= "select count(*) from categorylinks where cl_type = 'subcat'"
@@ -395,15 +396,20 @@ def ListWikis(servconfig):
                 "Graph exists (incl. Leaves)": (dbname in existing_graphs) })
         sys.stdout.flush()
 
+# action 'list-wikis'
+def ListWikis():
+    for w in GetWikis():
+        print w
+
 # action 'create-instanceconfig-missingwikis'
 def CreateMissingWikisInstanceconfig(servconfig):
     config= []
     existing_graphs= set(GetHostmap(servconfig))
     wikis= set(GetWikis())
-    wikis= set(filter(lambda name: name.endswith('_ns14'), wikis))
+    wikis= set(map(lambda name: name+'_ns14', wikis))
     missing_wikis= wikis - existing_graphs
     for wiki in missing_wikis:
-        config.append( { "name": wiki + "_ns14",
+        config.append( { "name": wiki,
             "refreshIntervalHours": "4.0", 
             "namespaces": [ 14 ] } );
     print json.dumps(config, indent=4)
@@ -413,14 +419,14 @@ if __name__ == '__main__':
     parser= argparse.ArgumentParser(description= 'Catgraph Maintenance Job Script.', formatter_class= argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-s', '--server-config', default='~/.graphcare-serverconfig.json', help='server config file. ' + GraphservConfig.__init__.__doc__)
     parser.add_argument('-i', '--instance-config', default='~/.graphcare-instanceconfig.json', help='instance config file. ' + GraphcoreInstanceConfig.__init__.__doc__)
-    parser.add_argument('-a', '--action', action='append',
-        choices=['update', 'dump-all-graphs', 'load-all-graphs', 'refresh-host-map', 'wiki-stats', 'create-instanceconfig-missingwikis'], 
+    parser.add_argument('-a', '--action', default=[], action='append',
+        choices=['update', 'dump-all-graphs', 'load-all-graphs', 'refresh-host-map', 'wiki-stats', 'create-instanceconfig-missingwikis', 'list-wikis'], 
         help='action to run. \n* update: start graphserv if necessary, update graphs, refresh hostmap (default)\n * dump-all-graphs: save all running graphs to $graphservWorkDir/dumps.\n * load-all-graphs: load all graphs from $graphservWorkDir/dumps.')
     
     args= parser.parse_args()
     gc= GraphservConfig().load(os.path.expanduser(args.server_config))
     instances= GraphcoreInstanceConfig(os.path.expanduser(args.instance_config))
-
+    
     if not len(args.action):
         args.action= ['update'] # default
     
@@ -437,8 +443,10 @@ if __name__ == '__main__':
         elif action=='refresh-host-map':
             RefreshHostmap(gc)
         elif action=='wiki-stats':
-            ListWikis(gc)
+            WikiStats(gc)
         elif action=='create-instanceconfig-missingwikis':
             CreateMissingWikisInstanceconfig(gc)
+        elif action=='list-wikis':
+            ListWikis()
     
     sys.exit(0)
