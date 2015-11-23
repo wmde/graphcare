@@ -350,9 +350,10 @@ def RefreshHostmap(servconfig):
 def GetWikis():
     wikis= []
     # crude way to get all known wikis: parse the hosts file for labsdb host names...
+    # XXXXXX labs apparently switched to proper dns instead of stuffing everything into /etc/hosts... todo: update this
     with open('/etc/hosts') as f:
         for line in f:
-            m= re.findall("\W(\w{2,3}wik(?:i|tionary).labsdb)+", line)
+            m= re.findall("\W(\w{2,3}wik(?:i|tionary|ivoyage).labsdb)+", line)
             if m:
                 for hostname in m:
                     dbname= hostname.split('.')[0]
@@ -379,6 +380,7 @@ def WikiStats(servconfig):
     for dbname in GetWikis():
         if dbname=='enwiki': continue
         #~ if not 'wiktionary' in dbname: continue
+        #~ if not 'wikivoyage' in dbname: continue
         conn= MySQLdb.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=GetSQLServerForDB(dbname), db=dbname+'_p')
         cursor= conn.cursor()
         query= "select count(*) from categorylinks where cl_type = 'subcat'"
