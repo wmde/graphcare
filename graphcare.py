@@ -122,7 +122,7 @@ def CheckGraphserv(servconfig):
 
 def GetSQLServerForDB(wiki):    # wiki is dbname with or without '_p' suffix
     if '_' in wiki: wiki= wiki.split('_')[0]
-    return '%s.labsdb' % wiki   # only on labs!
+    return '%s.analytics.db.svc.eqiad.wmflabs' % wiki
     
 
 def ReloadGraph(conn, instance, dbname, sqlhost, namespaces= '*'):
