@@ -154,52 +154,59 @@ and B.page_namespace = 14"""
     with tempfile.NamedTemporaryFile() as f:
         # get arcs from sql
         tmpnam= f.name
-        import _mysql
-        db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=sqlhost, db=dbname)
-        db.query(query)
-        result= db.use_result()
-        with open(tmpnam, 'w') as outfile:
-            while True:
-                row= result.fetch_row()
-                if not row: break
-                outfile.write('%d, %d\n' % (int(row[0][0]), int(row[0][1])))
-        db.close()
-
-        # create/use graph
+        import _mysql, _mysql_exceptions
         try:
-            conn.use_graph(instance)
-        except Exception as ex:
-            log(str(ex))
-            log("creating graph: %s" % instance)
-            conn.create_graph(instance)
-            conn.use_graph(instance)
+            db= _mysql.connect(read_default_file=os.path.expanduser('~')+'/.my.cnf', host=sqlhost, db=dbname)
+            db.query(query)
+            result= db.use_result()
+            with open(tmpnam, 'w') as outfile:
+                while True:
+                    row= result.fetch_row()
+                    if not row: break
+                    outfile.write('%d, %d\n' % (int(row[0][0]), int(row[0][1])))
+            db.close()
 
-        conn.allowPipes= True
+            # create/use graph
+            try:
+                conn.use_graph(instance)
+            except Exception as ex:
+                log(str(ex))
+                log("creating graph: %s" % instance)
+                conn.create_graph(instance)
+                conn.use_graph(instance)
+
+            conn.allowPipes= True
+            
+            log("clearing graphcore")
+            conn.execute("clear");
+            
+            log("sending arcs to graphcore")
+            
+            # load arcs from temp file into graphcore
+            conn.execute('add-arcs < %s' % tmpnam)
         
-        log("clearing graphcore")
-        conn.execute("clear");
-        
-        log("sending arcs to graphcore")
-        
-        # load arcs from temp file into graphcore
-        conn.execute('add-arcs < %s' % tmpnam)
-    
-    log("setting meta variables")
-    
-    # make stuff compatible with gpfeeder 
-    conn.execute("set-meta last_full_import %s" % timestamp)
-    conn.execute("set-meta gpfeeder_graph_type with-leafs")
-    conn.execute("set-meta gpfeeder_status polling")
-    conn.execute("set-meta gpfeeder_timestamp %s" % feedertimestamp)
-    conn.execute("set-meta gpfeeder_namespaces %s" % ('*' if namespaces=='*' else ('_'.join([str(i) for i in namespaces]))))
-    conn.execute("set-meta gpfeeder_dels_offset 0")
-    conn.execute("set-meta gpfeeder_dels_state up_to_date")
-    conn.execute("set-meta gpfeeder_dels_until %s" % feedertimestamp)
-    conn.execute("set-meta gpfeeder_mods_offset 0")
-    conn.execute("set-meta gpfeeder_mods_state up_to_date")
-    conn.execute("set-meta gpfeeder_mods_until %s" % feedertimestamp)
-    
-    log("imported %s." % instance)
+            log("setting meta variables")
+            
+            # make stuff compatible with gpfeeder 
+            conn.execute("set-meta last_full_import %s" % timestamp)
+            conn.execute("set-meta gpfeeder_graph_type with-leafs")
+            conn.execute("set-meta gpfeeder_status polling")
+            conn.execute("set-meta gpfeeder_timestamp %s" % feedertimestamp)
+            conn.execute("set-meta gpfeeder_namespaces %s" % ('*' if namespaces=='*' else ('_'.join([str(i) for i in namespaces]))))
+            conn.execute("set-meta gpfeeder_dels_offset 0")
+            conn.execute("set-meta gpfeeder_dels_state up_to_date")
+            conn.execute("set-meta gpfeeder_dels_until %s" % feedertimestamp)
+            conn.execute("set-meta gpfeeder_mods_offset 0")
+            conn.execute("set-meta gpfeeder_mods_state up_to_date")
+            conn.execute("set-meta gpfeeder_mods_until %s" % feedertimestamp)
+            
+            log("imported %s." % instance)
+
+        except _mysql_exceptions.OperationalError as ex:
+            if ex[0]==1049: #   "Unknown database"
+                log("%s" % ex)
+            else:
+                raise
     
 
 def CheckGraphcores(servconfig, instanceconfig):
